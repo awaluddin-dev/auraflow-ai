@@ -1,10 +1,15 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ConflictException,
+} from "@nestjs/common";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Queue } from "bullmq";
 import { PrismaService } from "../prisma/prisma.service";
 import { SubmitJobDto } from "./dto/submit-job.dto";
 import { CallbackJobDto } from "./dto/callback-job.dto";
-import type { Job } from "@prisma/client";
+import { type Job } from "../generated/prisma";
 
 @Injectable()
 export class JobsService {
@@ -17,7 +22,6 @@ export class JobsService {
   ) {}
 
   async submitJob(dto: SubmitJobDto): Promise<Job> {
-    // Buat record di DB dulu, dapat id
     const job = await this.prisma.job.create({
       data: {
         status: "queued",
@@ -25,7 +29,6 @@ export class JobsService {
       },
     });
 
-    // Push ke BullMQ dengan id dari DB sebagai jobId
     await this.queue.add(
       "process-data",
       { rawData: dto.rawData, jobId: job.id },
@@ -51,7 +54,28 @@ export class JobsService {
     return job;
   }
 
-  async handleCallback(dto: CallbackJobDto): Promise<void> {
+  async handleCallback(
+    dto: CallbackJobDto,
+  ): Promise<{ received: boolean; idempotent: boolean }> {
+    // Idempotency check — cek status sekarang sebelum update
+    const existing = await this.prisma.job.findUnique({
+      where: { id: dto.jobId },
+      select: { id: true, status: true, completedAt: true },
+    });
+
+    // Jika sudah terminal state (completed/failed), tolak dengan 409
+    if (
+      existing &&
+      (existing.status === "completed" || existing.status === "failed")
+    ) {
+      this.logger.warn(
+        `callback_duplicate_rejected job_id=${dto.jobId} existing_status=${existing.status}`,
+      );
+      throw new ConflictException(
+        `Job ${dto.jobId} already in terminal state: ${existing.status}`,
+      );
+    }
+
     await this.prisma.job.upsert({
       where: { id: dto.jobId },
       update: {
@@ -77,5 +101,7 @@ export class JobsService {
     this.logger.log(
       `callback_received job_id=${dto.jobId} status=${dto.status} is_valid=${dto.isValid}`,
     );
+
+    return { received: true, idempotent: false };
   }
 }

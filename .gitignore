@@ -1,11 +1,22 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-
-# Virtual environments
-.venv
+# Env
 .env
+gateway/.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.uv/
+
+# Node
+node_modules/
+gateway/node_modules/
+
+# Prisma generated
+gateway/src/generated/
+
+# Build
+gateway/dist/
+
+# OS
+.DS_Store

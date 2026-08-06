@@ -1,0 +1,10 @@
+services:
+  gateway:
+    restart: always
+    environment:
+      NODE_ENV: production
+
+  worker:
+    restart: always
+    deploy:
+      replicas: 2 # scale worker horizontal

@@ -141,7 +141,11 @@ class LLMRouter:
                 self._chain.append((provider_name, instance))
                 logger.info("Provider loaded: %s (model: %s)", provider_name, model)
             else:
-                logger.info("Provider skipped (no API key): %s", provider_name)
+                # Pesan berbeda untuk custom vs provider lain
+                if provider_name == "custom":
+                    logger.info("Provider skipped (no CUSTOM_LLM_BASE_URL): %s", provider_name)
+                else:
+                    logger.info("Provider skipped (no API key): %s", provider_name)  
 
         if not self._chain:
             raise RuntimeError("No LLM provider available. Set at least one API key in .env")

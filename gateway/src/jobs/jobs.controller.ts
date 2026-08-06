@@ -6,10 +6,12 @@ import {
   Logger,
   Param,
   Post,
+  Res,
 } from "@nestjs/common";
 import { JobsService } from "./jobs.service";
 import { SubmitJobDto } from "./dto/submit-job.dto";
 import { CallbackJobDto } from "./dto/callback-job.dto";
+import type { FastifyReply } from "fastify";
 
 @Controller("jobs")
 export class JobsController {
@@ -37,9 +39,21 @@ export class JobsController {
   }
 
   @Post("callback")
-  @HttpCode(200)
-  handleCallback(@Body() dto: CallbackJobDto) {
-    this.jobsService.handleCallback(dto);
-    return { received: true };
+  async handleCallback(
+    @Body() dto: CallbackJobDto,
+    @Res() reply: FastifyReply,
+  ) {
+    try {
+      const result = await this.jobsService.handleCallback(dto);
+      return reply.status(200).send(result);
+    } catch (error: any) {
+      if (error?.status === 409) {
+        // Return 409 — worker interpret ini sebagai success, tidak retry
+        return reply
+          .status(409)
+          .send({ received: true, idempotent: true, reason: error.message });
+      }
+      throw error;
+    }
   }
 }
