@@ -9,7 +9,7 @@ from bullmq import Worker
 from core.logger import get_logger
 from worker.graph import build_graph, AgentState
 
-load_dotenv(Path(__file__).parent.parent / ".env")
+load_dotenv(Path(__file__).parent.parent / ".env", override=False)
 logger = get_logger("worker.main")
 
 QUEUE_NAME = os.getenv("QUEUE_NAME", "auraflow-jobs")
