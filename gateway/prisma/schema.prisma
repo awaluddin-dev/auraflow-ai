@@ -1,0 +1,25 @@
+generator client {
+  provider = "prisma-client-js"
+  output        = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["auraflow"]
+}
+
+model Job {
+  id               String    @id @default(cuid())
+  status           String    @default("queued")
+  rawData          String
+  cleanedData      String?
+  isValid          Boolean?
+  attempts         Int?
+  validationReason String?
+  createdAt        DateTime  @default(now())
+  completedAt      DateTime?
+  updatedAt        DateTime  @updatedAt
+
+  @@map("jobs")
+  @@schema("auraflow")
+}
