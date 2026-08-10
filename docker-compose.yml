@@ -16,10 +16,10 @@ services:
     build:
       context: .
       dockerfile: worker/Dockerfile
+    ports:
+      - "8001:8001" # FastAPI health + metrics
     env_file:
       - .env
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-      - gateway
     restart: unless-stopped

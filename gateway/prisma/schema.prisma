@@ -16,6 +16,8 @@ model Job {
   isValid          Boolean?
   attempts         Int?
   validationReason String?
+  failedReason     String?   // NEW — alasan job masuk DLQ
+  failedAt         DateTime? // NEW — kapan job dinyatakan gagal total
   createdAt        DateTime  @default(now())
   completedAt      DateTime?
   updatedAt        DateTime  @updatedAt

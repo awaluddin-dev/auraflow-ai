@@ -9,7 +9,7 @@ import { Queue } from "bullmq";
 import { PrismaService } from "../prisma/prisma.service";
 import { SubmitJobDto } from "./dto/submit-job.dto";
 import { CallbackJobDto } from "./dto/callback-job.dto";
-import { type Job } from "../generated/prisma";
+import { type Job } from "@prisma/client";
 
 @Injectable()
 export class JobsService {
@@ -23,16 +23,19 @@ export class JobsService {
 
   async submitJob(dto: SubmitJobDto): Promise<Job> {
     const job = await this.prisma.job.create({
-      data: {
-        status: "queued",
-        rawData: dto.rawData,
-      },
+      data: { status: "queued", rawData: dto.rawData },
     });
 
     await this.queue.add(
       "process-data",
       { rawData: dto.rawData, jobId: job.id },
-      { jobId: job.id },
+      {
+        jobId: job.id,
+        attempts: 3,
+        backoff: { type: "exponential", delay: 2000 },
+        removeOnComplete: 100,
+        removeOnFail: false, // PENTING: jangan hapus failed job dari Redis
+      },
     );
 
     this.logger.log(
@@ -43,27 +46,73 @@ export class JobsService {
   }
 
   async getJob(jobId: string): Promise<Job> {
-    const job = await this.prisma.job.findUnique({
+    const job = await this.prisma.job.findUnique({ where: { id: jobId } });
+    if (!job) throw new NotFoundException(`Job ${jobId} not found`);
+    return job;
+  }
+
+  async getFailedJobs(): Promise<Job[]> {
+    return this.prisma.job.findMany({
+      where: { status: "failed" },
+      orderBy: { failedAt: "desc" },
+      take: 50,
+    });
+  }
+
+  async retryJob(jobId: string): Promise<Job> {
+    const existing = await this.prisma.job.findUnique({
       where: { id: jobId },
     });
 
-    if (!job) {
+    if (!existing) {
       throw new NotFoundException(`Job ${jobId} not found`);
     }
 
-    return job;
+    if (existing.status !== "failed") {
+      throw new ConflictException(
+        `Job ${jobId} is not in failed state (current: ${existing.status})`,
+      );
+    }
+
+    // Reset status di DB
+    const updated = await this.prisma.job.update({
+      where: { id: jobId },
+      data: {
+        status: "queued",
+        failedReason: null,
+        failedAt: null,
+        cleanedData: null,
+        isValid: null,
+        attempts: null,
+        validationReason: null,
+        completedAt: null,
+      },
+    });
+
+    // Push ulang ke queue dengan id yang sama
+    await this.queue.add(
+      "process-data",
+      { rawData: existing.rawData, jobId: existing.id },
+      {
+        jobId: `retry-${existing.id}-${Date.now()}`,
+        attempts: 3,
+        backoff: { type: "exponential", delay: 2000 },
+        removeOnFail: false,
+      },
+    );
+
+    this.logger.log(`job_retry job_id=${jobId}`);
+    return updated;
   }
 
   async handleCallback(
     dto: CallbackJobDto,
   ): Promise<{ received: boolean; idempotent: boolean }> {
-    // Idempotency check — cek status sekarang sebelum update
     const existing = await this.prisma.job.findUnique({
       where: { id: dto.jobId },
-      select: { id: true, status: true, completedAt: true },
+      select: { id: true, status: true },
     });
 
-    // Jika sudah terminal state (completed/failed), tolak dengan 409
     if (
       existing &&
       (existing.status === "completed" || existing.status === "failed")
@@ -84,7 +133,9 @@ export class JobsService {
         isValid: dto.isValid,
         attempts: dto.attempts,
         validationReason: dto.validationReason,
-        completedAt: new Date(),
+        failedReason: dto.failedReason ?? null,
+        failedAt: dto.status === "failed" ? new Date() : null,
+        completedAt: dto.status === "completed" ? new Date() : null,
       },
       create: {
         id: dto.jobId,
@@ -94,7 +145,9 @@ export class JobsService {
         isValid: dto.isValid,
         attempts: dto.attempts,
         validationReason: dto.validationReason,
-        completedAt: new Date(),
+        failedReason: dto.failedReason ?? null,
+        failedAt: dto.status === "failed" ? new Date() : null,
+        completedAt: dto.status === "completed" ? new Date() : null,
       },
     });
 
