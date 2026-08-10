@@ -7,7 +7,11 @@ import {
 import { InjectQueue } from "@nestjs/bullmq";
 import { Queue } from "bullmq";
 import { PrismaService } from "../prisma/prisma.service";
-import { PRIORITY_MAP, SubmitJobDto } from "./dto/submit-job.dto";
+import {
+  PRIORITY_MAP,
+  SubmitJobDto,
+  type JobPriority,
+} from "./dto/submit-job.dto";
 import { CallbackJobDto } from "./dto/callback-job.dto";
 import { type Job } from "@prisma/client";
 
