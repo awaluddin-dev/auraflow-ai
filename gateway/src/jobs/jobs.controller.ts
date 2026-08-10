@@ -3,15 +3,16 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpStatus,
   Logger,
   Param,
   Post,
   Res,
 } from "@nestjs/common";
+import { type FastifyReply } from "fastify";
 import { JobsService } from "./jobs.service";
 import { SubmitJobDto } from "./dto/submit-job.dto";
 import { CallbackJobDto } from "./dto/callback-job.dto";
-import type { FastifyReply } from "fastify";
 
 @Controller("jobs")
 export class JobsController {
@@ -20,7 +21,7 @@ export class JobsController {
   constructor(private readonly jobsService: JobsService) {}
 
   @Post()
-  @HttpCode(202)
+  @HttpCode(HttpStatus.ACCEPTED)
   async submit(@Body() dto: SubmitJobDto) {
     if (!dto.rawData || typeof dto.rawData !== "string") {
       return { error: "rawData is required and must be a string" };
@@ -31,6 +32,17 @@ export class JobsController {
       status: record.status,
       message: "Job accepted and queued for processing",
     };
+  }
+
+  @Get("failed")
+  getFailedJobs() {
+    return this.jobsService.getFailedJobs();
+  }
+
+  @Post("failed/:id/retry")
+  @HttpCode(HttpStatus.ACCEPTED)
+  retryJob(@Param("id") id: string) {
+    return this.jobsService.retryJob(id);
   }
 
   @Get(":id")
@@ -48,10 +60,11 @@ export class JobsController {
       return reply.status(200).send(result);
     } catch (error: any) {
       if (error?.status === 409) {
-        // Return 409 — worker interpret ini sebagai success, tidak retry
-        return reply
-          .status(409)
-          .send({ received: true, idempotent: true, reason: error.message });
+        return reply.status(409).send({
+          received: true,
+          idempotent: true,
+          reason: error.message,
+        });
       }
       throw error;
     }

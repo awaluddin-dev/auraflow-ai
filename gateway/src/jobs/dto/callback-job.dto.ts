@@ -5,4 +5,5 @@ export class CallbackJobDto {
   isValid!: boolean;
   attempts!: number;
   validationReason!: string;
+  failedReason?: string; // NEW
 }

@@ -11,11 +11,14 @@ datasource db {
 model Job {
   id               String    @id @default(cuid())
   status           String    @default("queued")
+  priority         String    @default("normal")  // NEW
   rawData          String
   cleanedData      String?
   isValid          Boolean?
   attempts         Int?
   validationReason String?
+  failedReason     String?
+  failedAt         DateTime?
   createdAt        DateTime  @default(now())
   completedAt      DateTime?
   updatedAt        DateTime  @updatedAt
