@@ -7,7 +7,7 @@ import {
 import { InjectQueue } from "@nestjs/bullmq";
 import { Queue } from "bullmq";
 import { PrismaService } from "../prisma/prisma.service";
-import { SubmitJobDto } from "./dto/submit-job.dto";
+import { PRIORITY_MAP, SubmitJobDto } from "./dto/submit-job.dto";
 import { CallbackJobDto } from "./dto/callback-job.dto";
 import { type Job } from "@prisma/client";
 
@@ -22,8 +22,10 @@ export class JobsService {
   ) {}
 
   async submitJob(dto: SubmitJobDto): Promise<Job> {
+    const priority = dto.priority ?? "normal";
+    const bullPriority = PRIORITY_MAP[priority];
     const job = await this.prisma.job.create({
-      data: { status: "queued", rawData: dto.rawData },
+      data: { status: "queued", rawData: dto.rawData, priority },
     });
 
     await this.queue.add(
@@ -31,6 +33,7 @@ export class JobsService {
       { rawData: dto.rawData, jobId: job.id },
       {
         jobId: job.id,
+        priority: bullPriority,
         attempts: 3,
         backoff: { type: "exponential", delay: 2000 },
         removeOnComplete: 100,
@@ -39,7 +42,7 @@ export class JobsService {
     );
 
     this.logger.log(
-      `job_queued job_id=${job.id} preview=${dto.rawData.slice(0, 50)}`,
+      `job_queued job_id=${job.id} priority=${priority}(${bullPriority}) preview=${dto.rawData.slice(0, 50)}`,
     );
 
     return job;
@@ -60,21 +63,15 @@ export class JobsService {
   }
 
   async retryJob(jobId: string): Promise<Job> {
-    const existing = await this.prisma.job.findUnique({
-      where: { id: jobId },
-    });
+    const existing = await this.prisma.job.findUnique({ where: { id: jobId } });
 
-    if (!existing) {
-      throw new NotFoundException(`Job ${jobId} not found`);
-    }
-
+    if (!existing) throw new NotFoundException(`Job ${jobId} not found`);
     if (existing.status !== "failed") {
       throw new ConflictException(
         `Job ${jobId} is not in failed state (current: ${existing.status})`,
       );
     }
 
-    // Reset status di DB
     const updated = await this.prisma.job.update({
       where: { id: jobId },
       data: {
@@ -89,19 +86,22 @@ export class JobsService {
       },
     });
 
-    // Push ulang ke queue dengan id yang sama
+    const priority = (existing.priority as JobPriority) ?? "normal";
+    const bullPriority = PRIORITY_MAP[priority];
+
     await this.queue.add(
       "process-data",
       { rawData: existing.rawData, jobId: existing.id },
       {
         jobId: `retry-${existing.id}-${Date.now()}`,
+        priority: bullPriority, // pertahankan priority asli saat retry
         attempts: 3,
         backoff: { type: "exponential", delay: 2000 },
         removeOnFail: false,
       },
     );
 
-    this.logger.log(`job_retry job_id=${jobId}`);
+    this.logger.log(`job_retry job_id=${jobId} priority=${priority}`);
     return updated;
   }
 
