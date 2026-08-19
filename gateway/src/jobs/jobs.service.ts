@@ -41,7 +41,7 @@ export class JobsService {
         attempts: 3,
         backoff: { type: "exponential", delay: 2000 },
         removeOnComplete: 100,
-        removeOnFail: false, // PENTING: jangan hapus failed job dari Redis
+        removeOnFail: false,
       },
     );
 
