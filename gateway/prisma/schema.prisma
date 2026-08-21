@@ -11,12 +11,16 @@ datasource db {
 model Job {
   id               String    @id @default(cuid())
   status           String    @default("queued")
-  priority         String    @default("normal")  // NEW
+  priority         String    @default("normal")
   rawData          String
+  sanitizedData    String?
+  sanitizeLog      String[]  @default([])
   cleanedData      String?
   isValid          Boolean?
+  confidence       Float?   // NEW
   attempts         Int?
   validationReason String?
+  issues           String[]  @default([])  // NEW
   failedReason     String?
   failedAt         DateTime?
   createdAt        DateTime  @default(now())
