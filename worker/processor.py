@@ -12,11 +12,9 @@ CALLBACK_MAX_RETRIES = int(os.getenv("CALLBACK_MAX_RETRIES", "5"))
 CALLBACK_BASE_DELAY = float(os.getenv("CALLBACK_BASE_DELAY_SECONDS", "1.0"))
 CALLBACK_MAX_DELAY = float(os.getenv("CALLBACK_MAX_DELAY_SECONDS", "30.0"))
 
-# Thread pool untuk jalankan blocking LangGraph calls
-# Size = WORKER_CONCURRENCY supaya tidak ada thread starvation
 _THREAD_POOL = ThreadPoolExecutor(
     max_workers=int(os.getenv("WORKER_CONCURRENCY", "3")),
-    thread_name_prefix="langgraph"
+    thread_name_prefix="langgraph",
 )
 
 
@@ -56,10 +54,14 @@ class AuraFlowProcessor:
 
             initial_state: AgentState = {
                 "raw_data": raw_data,
+                "sanitized_data": "",
+                "sanitize_log": [],
                 "cleaned_data": "",
                 "is_valid": False,
+                "confidence": 0.0,
                 "attempt": 0,
                 "validation_reason": "",
+                "issues": [],
             }
 
             logger.info("job_processing job_id=%-30s preview=%s",
@@ -73,14 +75,19 @@ class AuraFlowProcessor:
             )
 
             logger.info(
-                "job_finished  job_id=%-30s is_valid=%s attempts=%d active_count=%d",
-                job_id, result["is_valid"], result["attempt"], len(self._active_jobs),
+                "job_finished  job_id=%-30s is_valid=%s confidence=%.2f attempts=%d sanitize_log=%s",
+                job_id, result["is_valid"], result["confidence"],
+                result["attempt"], result["sanitize_log"],
             )
 
-            # Jika LangGraph selesai tapi tidak valid setelah max attempts
             failed_reason = None
-            if not result["is_valid"]:
-                failed_reason = f"Max parse attempts reached. Last reason: {result['validation_reason']}"
+            if not result["is_valid"] or result["confidence"] < float(os.getenv("MIN_CONFIDENCE_SCORE", "0.8")):
+                failed_reason = (
+                    f"Max parse attempts reached. "
+                    f"confidence={result['confidence']:.2f} "
+                    f"reason={result['validation_reason']} "
+                    f"issues={result['issues']}"
+                )
                 logger.warning("job_invalid job_id=%-30s reason=%s", job_id, failed_reason)
 
             success = await self._send_callback(job_id, result, failed_reason)
@@ -95,13 +102,16 @@ class AuraFlowProcessor:
             failed_reason = str(e)
             logger.error("job_error job_id=%-30s error=%s", job_id, failed_reason)
 
-            # Coba kirim callback dengan status failed
             try:
                 await self._send_callback(job_id, {
+                    "sanitized_data": "",
+                    "sanitize_log": [],
                     "cleaned_data": "",
                     "is_valid": False,
+                    "confidence": 0.0,
                     "attempt": 0,
                     "validation_reason": "",
+                    "issues": [],
                 }, failed_reason)
             except Exception as cb_err:
                 logger.error("callback_on_error_failed job_id=%-30s error=%s", job_id, cb_err)
@@ -118,12 +128,15 @@ class AuraFlowProcessor:
     async def _send_callback(self, job_id: str, result: dict, failed_reason: str = None) -> bool:
         payload = {
             "jobId": job_id,
-            "status": "completed" if result["is_valid"] else "failed",
+            "status": "completed" if (result["is_valid"] and result.get("confidence", 0) >= float(os.getenv("MIN_CONFIDENCE_SCORE", "0.8"))) else "failed",
             "cleanedData": result["cleaned_data"],
             "isValid": result["is_valid"],
+            "confidence": result.get("confidence", 0.0),
             "attempts": result["attempt"],
             "validationReason": result["validation_reason"],
-            "failedReason": failed_reason,  # NEW
+            "issues": result.get("issues", []),
+            "sanitizeLog": result.get("sanitize_log", []),
+            "failedReason": failed_reason,
         }
 
         for attempt in range(1, CALLBACK_MAX_RETRIES + 1):

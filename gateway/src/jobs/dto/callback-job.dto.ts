@@ -3,7 +3,10 @@ export class CallbackJobDto {
   status!: "completed" | "failed";
   cleanedData!: string;
   isValid!: boolean;
+  confidence!: number;
   attempts!: number;
   validationReason!: string;
-  failedReason?: string; // NEW
+  issues!: string[];
+  sanitizeLog!: string[];
+  failedReason?: string;
 }

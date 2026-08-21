@@ -41,7 +41,7 @@ export class JobsService {
         attempts: 3,
         backoff: { type: "exponential", delay: 2000 },
         removeOnComplete: 100,
-        removeOnFail: false, // PENTING: jangan hapus failed job dari Redis
+        removeOnFail: false,
       },
     );
 
@@ -135,8 +135,11 @@ export class JobsService {
         status: dto.status,
         cleanedData: dto.cleanedData,
         isValid: dto.isValid,
+        confidence: dto.confidence,
         attempts: dto.attempts,
         validationReason: dto.validationReason,
+        issues: dto.issues ?? [],
+        sanitizeLog: dto.sanitizeLog ?? [],
         failedReason: dto.failedReason ?? null,
         failedAt: dto.status === "failed" ? new Date() : null,
         completedAt: dto.status === "completed" ? new Date() : null,
@@ -147,8 +150,11 @@ export class JobsService {
         rawData: "",
         cleanedData: dto.cleanedData,
         isValid: dto.isValid,
+        confidence: dto.confidence,
         attempts: dto.attempts,
         validationReason: dto.validationReason,
+        issues: dto.issues ?? [],
+        sanitizeLog: dto.sanitizeLog ?? [],
         failedReason: dto.failedReason ?? null,
         failedAt: dto.status === "failed" ? new Date() : null,
         completedAt: dto.status === "completed" ? new Date() : null,
