@@ -53,6 +53,7 @@ class AuraFlowProcessor:
                 raise ValueError(f"Missing rawData in job {job_id}")
 
             initial_state: AgentState = {
+                "job_id": job_id,
                 "raw_data": raw_data,
                 "sanitized_data": "",
                 "sanitize_log": [],

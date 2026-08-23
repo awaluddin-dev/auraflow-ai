@@ -13,12 +13,16 @@ import { type FastifyReply } from "fastify";
 import { JobsService } from "./jobs.service";
 import { SubmitJobDto } from "./dto/submit-job.dto";
 import { CallbackJobDto } from "./dto/callback-job.dto";
+import { JobsGateway } from "./job.gateway";
 
 @Controller("jobs")
 export class JobsController {
   private readonly logger = new Logger(JobsController.name);
 
-  constructor(private readonly jobsService: JobsService) {}
+  constructor(
+    private readonly jobsService: JobsService,
+    private readonly jobsGateway: JobsGateway,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.ACCEPTED)
@@ -48,6 +52,11 @@ export class JobsController {
   @Get(":id")
   getJob(@Param("id") id: string) {
     return this.jobsService.getJob(id);
+  }
+
+  @Get(":id/progress")
+  async streamProgress(@Param("id") id: string, @Res() reply: FastifyReply) {
+    await this.jobsGateway.streamProgress(id, reply);
   }
 
   @Post("callback")
