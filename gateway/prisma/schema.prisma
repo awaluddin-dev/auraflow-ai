@@ -17,12 +17,14 @@ model Job {
   sanitizeLog      String[]  @default([])
   cleanedData      String?
   isValid          Boolean?
-  confidence       Float?   // NEW
+  confidence       Float?
   attempts         Int?
   validationReason String?
-  issues           String[]  @default([])  // NEW
+  issues           String[]  @default([])
   failedReason     String?
   failedAt         DateTime?
+  reviewedAt       DateTime?
+  reviewedBy       String?
   createdAt        DateTime  @default(now())
   completedAt      DateTime?
   updatedAt        DateTime  @updatedAt
