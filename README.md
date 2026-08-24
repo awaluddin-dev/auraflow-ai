@@ -1,175 +1,144 @@
-# AuraFlow AI
+# AuraFlow AI ⚡
 
-Distributed asynchronous data cleaning system using LangGraph agents and enterprise queue architecture.
+> An autonomous, distributed AI data-cleansing pipeline powered by LangGraph, NestJS, Redis/BullMQ, and PostgreSQL with built-in Human-in-the-Loop (HITL) safety controls.
 
-Submits raw malformed data via REST API → cleans and validates using LLM agents in a feedback loop → persists structured results to PostgreSQL.
+[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Node Version](https://img.shields.io/badge/node-%3E%3D20.0.0-green.svg)](https://nodejs.org/)
+[![Package Manager](https://img.shields.io/badge/managed%20by-uv-purple.svg)](https://github.com/astral-sh/uv)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Architecture
+---
 
-POST /jobs (NestJS/Fastify)
-→ BullMQ job (Redis)
-→ LangGraph Worker (Python)
-→ Parser Agent: clean raw data using LLM
-→ Validator Agent: verify output, loop back if invalid
-→ HITL (Human-in-the-Loop) Check: pause for manual review if confidence is low (< 0.9)
-→ HTTP callback with retry + idempotency
-→ PostgreSQL (result persisted)
+## 📌 Overview
 
-GET /jobs/:id → return status and cleaned data
-GET /jobs/:id/progress → SSE (Server-Sent Events) live streaming progress
+**AuraFlow AI** solves the problem of unreliable, unstructured, and malformed data ingestion. By orchestrating multi-agent feedback loops via **LangGraph** and integrating deterministic business validation rules, AuraFlow AI standardizes entity formats, detects outliers, and flags low-confidence data for human review before persisting it to **PostgreSQL**.
 
-## Stack
+### Key Highlights
 
-| Layer         | Technology                                        |
-| ------------- | ------------------------------------------------- |
-| Gateway       | Bun · NestJS · Fastify                            |
-| Queue         | BullMQ · Redis                                    |
-| AI Worker     | Python · LangGraph                                |
-| LLM Providers | Gemini · OpenAI · Claude · Groq · Custom endpoint |
-| Database      | PostgreSQL · Prisma 7                             |
-| Container     | Docker · Docker Compose                           |
+- **Multi-Agent Feedback Loop**: Autonomous Parser and Validator agents verify and self-correct extraction errors.
+- **Deterministic Business Rule Engine**: Validates domain-specific constraints (e.g., regional salary boundaries, name lengths, date ranges).
+- **Human-in-the-Loop (HITL)**: Automatically routes entries with confidence $< 0.90$ or anomalous values to a human triage queue.
+- **Distributed & Scalable**: Decoupled ingestion gateway (NestJS + Fastify) and job workers (Redis + BullMQ).
+- **Multi-Model Provider Agnostic**: Native integration with Google Gemini, Anthropic Claude, OpenAI, and Groq LLaMA 3.
+- **Real-Time Observability**: Live processing progress via Server-Sent Events (SSE) and idempotent webhook delivery.
 
-## LLM Provider Fallback
+---
 
-Supports multiple providers with configurable fallback chain.
-If the primary provider fails (rate limit, timeout, API error), automatically falls back to the next available provider.
+## 🏗️ Architecture
 
-Configure via environment:
+```mermaid
+flowchart LR
+    A[Raw Input Data] --> B[NestJS / Fastify API]
+    B --> C[(Redis + BullMQ)]
+    C --> D[LangGraph Worker]
 
-```env
-LLM_PROVIDER_ORDER=gemini,groq,openai,claude,custom
+    subgraph D [Python LangGraph Pipeline]
+        D1[Parser Agent] --> D2[Validator Agent]
+        D2 --> D3{Valid & Conf >= 0.9?}
+        D3 -- No / Retries < 3 --> D1
+        D3 -- Yes --> D4[Deterministic Rules]
+        D4 -- Flagged --> D5[HITL Queue]
+    end
+
+    D4 -- Clean --> E[(PostgreSQL)]
+    D5 --> E
+    E --> F[Webhook / SSE Callback]
 ```
 
-Custom OpenAI-compatible endpoints (Ollama, OpenRouter, vLLM) supported via:
+---
 
-```env
-CUSTOM_LLM_BASE_URL=http://localhost:11434/v1
-CUSTOM_LLM_MODEL=llama3.2
-```
+## ⚙️ Data Cleansing & Validation Pipeline
 
-## Quick Start
+| Validation Stage        | Mechanism           | Validation Criteria                                                             |
+| :---------------------- | :------------------ | :------------------------------------------------------------------------------ |
+| **Field Extraction**    | LLM Parser Agent    | Extracts structural entities from raw unstructured text/JSON.                   |
+| **Self-Correction**     | LLM Validator Agent | Evaluates schema accuracy; triggers re-parsing loop on failure.                 |
+| **Name Validation**     | Deterministic Check | Flags single-character tokens or abbreviations ($< 3$ chars).                   |
+| **Compensation Bounds** | Deterministic Check | Flags values outside standard ranges ($\text{IDR } 500\text{k} - 500\text{M}$). |
+| **Date Boundaries**     | Deterministic Check | Restricts transaction/record years between $2000$ and $2030$.                   |
+| **Confidence Scoring**  | Confidence Gate     | Routes records with confidence score $< 0.90$ to HITL review.                   |
+
+---
+
+## 🚀 Quickstart
+
+### Prerequisites
+
+- [uv](https://github.com/astral-sh/uv) (Python package manager)
+- [Node.js](https://nodejs.org/) (v20+) and `pnpm` / `npm`
+- [Docker](https://www.docker.com/) & Docker Compose (for PostgreSQL and Redis)
+
+### 1. Clone & Set Up Environment Variables
 
 ```bash
-# 1. Clone and configure
-git clone https://github.com/awaluddin-dev/auraflow-ai
+git clone [https://github.com/awaluddin-dev/auraflow-ai.git](https://github.com/awaluddin-dev/auraflow-ai.git)
 cd auraflow-ai
+
+# Copy environment templates
 cp .env.example .env
-# Edit .env — set at least one LLM provider API key
-
-# 2. Start all services
-docker compose up --build
-
-# 3. Run database migration (first time only)
-docker compose exec gateway bunx prisma migrate deploy
-
-# 4. Submit a job
-curl -X POST http://localhost:3000/jobs \
-  -H "Content-Type: application/json" \
-  -d '{"rawData": "john doe, 50000, 2024-01-15"}'
-
-# 5. Check result
-curl http://localhost:3000/jobs/{jobId}
 ```
 
-## API
+Configure your `.env` file:
 
-### POST /jobs
+```env
+PORT=3000
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/auraflow
+REDIS_HOST=localhost
+REDIS_PORT=6379
 
-Submit raw data for processing.
-
-**Request:**
-
-```json
-{ "rawData": "string — any format, malformed data accepted" }
+# LLM Keys (Configure at least one)
+GEMINI_API_KEY=your_gemini_key
+OPENAI_API_KEY=your_openai_key
+ANTHROPIC_API_KEY=your_anthropic_key
+GROQ_API_KEY=your_groq_key
 ```
 
-**Response (202):**
+### 2. Start Infrastructure via Docker
 
-```json
-{ "jobId": "cuid", "status": "queued", "message": "..." }
+```bash
+docker compose up -d redis postgres
 ```
 
-### GET /jobs/:id
+### 3. Install Dependencies & Run Workers
 
-Get job status and result.
+```bash
+# Set up Python worker
+uv sync
+uv run python -m worker.main
 
-**Response:**
+# In another terminal, start API gateway
+npm install
+npm run start:dev
+```
 
-```json
+---
+
+## 📡 API Usage
+
+### Enqueue Data Cleansing Job
+
+```http
+POST /api/v1/cleanse
+Content-Type: application/json
+
 {
-  "id": "cuid",
-  "status": "queued | pending_review | completed | failed",
-  "rawData": "original input",
-  "cleanedData": "{\"name\": \"John Doe\", \"salary\": 50000, \"date\": \"2024-01-15\"}",
-  "isValid": true,
-  "attempts": 1,
-  "validationReason": "OK",
-  "createdAt": "ISO8601",
-  "completedAt": "ISO8601"
+  "raw_payload": "John D. joined PT Maju on 15/08/2023 with monthly comp of 15jt IDR",
+  "callback_url": "[https://your-service.com/webhook](https://your-service.com/webhook)"
 }
 ```
 
-### GET /jobs/:id/progress
+### Response
 
-Stream real-time job execution progress using SSE (Server-Sent Events).
-The stream will automatically close when the job reaches a terminal state (`completed`, `failed`, or `pending_review`).
-
-### GET /jobs/pending-review
-
-List all jobs that require manual Human-in-the-Loop (HITL) review due to low confidence or business rule triggers.
-
-### POST /jobs/:id/review
-
-Submit a manual review decision for a job in `pending_review` state.
-
-**Request:**
 ```json
 {
-  "decision": "approve | reject | edit",
-  "editedData": "{...}", // required if decision is "edit"
-  "note": "Optional review notes"
+  "job_id": "job_984f1a20",
+  "status": "QUEUED",
+  "stream_url": "/api/v1/cleanse/job_984f1a20/stream"
 }
 ```
 
-## Reliability
+---
 
-- **LLM fallback chain** — automatic failover across providers
-- **Parse retry loop** — validator feeds reason back to parser, up to 3 attempts
-- **Human-in-the-Loop (HITL)** — pauses execution for manual review if AI confidence is low or business rules are triggered
-- **Callback retry** — exponential backoff (1s → 2s → 4s → 8s → 16s), max 5 attempts
-- **Idempotency** — duplicate callbacks rejected with 409, not double-written
-- **BullMQ retry** — if all callback attempts fail, BullMQ retries the full job
+## 📄 License
 
-## Local Development (without Docker)
-
-```bash
-# Dependencies
-cd gateway && bun install
-cd .. && uv sync
-
-# Infrastructure
-docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:16-alpine
-docker run -d -p 6379:6379 redis:7-alpine
-
-# Migrate
-cd gateway && bunx prisma migrate dev
-
-# Run
-bun run dev          # terminal 1 — gateway
-uv run python -m worker.main  # terminal 2 — worker
-```
-
-## Jalankan Dengan Docker
-
-```bash
-# Build dan start semua
-docker compose up --build
-
-# First time — migrate database
-docker compose exec gateway bunx prisma migrate deploy
-
-# Test
-curl -X POST http://localhost:3000/jobs \
-  -H "Content-Type: application/json" \
-  -d '{"rawData": "BUDI SANTOSO | gaji: Rp 8.500.000 | tgl masuk: 15 Januari 2024"}'
-```
+Distributed under the MIT License. See `LICENSE` for more information.
