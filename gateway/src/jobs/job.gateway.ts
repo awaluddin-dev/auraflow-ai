@@ -48,7 +48,11 @@ export class JobsGateway implements OnModuleDestroy {
         this.logger.debug(`sse_event job_id=${jobId} stage=${data.stage}`);
 
         // Tutup koneksi jika job terminal
-        if (data.stage === "completed" || data.stage === "failed") {
+        if (
+          data.stage === "completed" || 
+          data.stage === "failed" || 
+          data.stage === "pending_review"
+        ) {
           send("done", { jobId, stage: data.stage });
           this.logger.log(`sse_closed job_id=${jobId} stage=${data.stage}`);
           subscriber.disconnect();

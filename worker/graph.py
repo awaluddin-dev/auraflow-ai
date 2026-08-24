@@ -238,6 +238,18 @@ No markdown. No explanation outside JSON.
         confidence = float(parsed.get("confidence", 0.0))
         reason = parsed.get("reason", "unknown")
         issues = parsed.get("issues", [])
+        
+        if is_valid:
+            try:
+                data = json.loads(state.get("cleaned_data", "{}"))
+                name = data.get("name", "")
+                if 0 < len(name) < 10 and confidence >= 0.9:
+                    confidence = 0.85
+                    reason = "Valid but name is short, reducing confidence for human review"
+                    if "name is unusually short" not in issues:
+                        issues.append("name is unusually short")
+            except Exception:
+                pass
     except Exception as e:
         logger.warning("validate_node json_parse_error=%s response=%s", e, response)
         is_valid = False
@@ -346,10 +358,11 @@ def should_retry_or_review(state: AgentState) -> str:
         })
         return END
 
-    # Valid tapi ada HITL triggers → minta review manusia
-    if is_valid and hitl_reasons:
+    # Valid tapi ada HITL triggers atau confidence rendah -> minta review manusia
+    if is_valid and (hitl_reasons or confidence < MIN_CONFIDENCE):
         logger.info(
-            "graph_decision result=pending_review hitl_reasons=%s", hitl_reasons,
+            "graph_decision result=pending_review hitl_reasons=%s confidence=%.2f", 
+            hitl_reasons, confidence,
         )
         return "human_review"
 
