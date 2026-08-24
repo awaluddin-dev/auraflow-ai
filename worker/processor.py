@@ -1,4 +1,5 @@
 from anthropic.types.beta import beta_managed_agents_agent_tool_config_params
+from anthropic.types.beta import beta_managed_agents_agent_tool_config_params
 import asyncio
 import aiohttp
 import os
@@ -130,23 +131,24 @@ class AuraFlowProcessor:
                 lambda: self._graph.invoke(initial_state, invoke_config),
             )
 
-            # Detect interrupt — LangGraph set __interrupt__ di result
-            # saat graph pause di interrupt_before node
+            # Log untuk debug
+            logger.debug("invoke_result keys=%s",
+                list(result.keys()) if isinstance(result, dict) else type(result))
+
+            # interrupt() di dalam node → result["__interrupt__"] berisi tuple Interrupt objects
             interrupts = result.get("__interrupt__") if isinstance(result, dict) else None
 
+            logger.debug("invoke_result __interrupt__=%s type=%s",
+                interrupts, type(interrupts).__name__ if interrupts is not None else "None")
+
             if interrupts:
+                # Ada interrupt — graph pause, tunggu review
                 logger.info(
                     "job_interrupted job_id=%-30s hitl_reasons=%s waiting_for_review",
                     job_id, result.get("hitl_reasons", []),
                 )
-
-                # Kirim callback pending_review ke gateway
                 await self._send_review_callback(job_id, result)
-
-                # Start background listener untuk resume signal dari gateway
                 asyncio.create_task(self._listen_for_resume(job_id))
-
-                # Return tanpa raise — job tidak fail, hanya pause
                 self._jobs_processed += 1
                 return {"status": "pending_review", "jobId": job_id}
 

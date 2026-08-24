@@ -426,5 +426,5 @@ def build_graph(checkpointer=None):
 
     return graph.compile(
         checkpointer=checkpointer,
-        interrupt_before=["human_review"],
+        # HAPUS interrupt_before — biarkan interrupt() di dalam node yang handle
     )
