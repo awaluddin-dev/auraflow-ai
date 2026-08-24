@@ -14,6 +14,7 @@ import {
 } from "./dto/submit-job.dto";
 import { CallbackJobDto } from "./dto/callback-job.dto";
 import { type Job } from "@prisma/client";
+import type { ReviewJobDto } from "./dto/review-job.dto";
 
 @Injectable()
 export class JobsService {
@@ -117,6 +118,8 @@ export class JobsService {
       select: { id: true, status: true },
     });
 
+    // Hanya tolak duplicate jika sudah terminal (completed/failed)
+    // pending_review bisa di-update
     if (
       existing &&
       (existing.status === "completed" || existing.status === "failed")
@@ -166,5 +169,72 @@ export class JobsService {
     );
 
     return { received: true, idempotent: false };
+  }
+  async getPendingReviews(): Promise<Job[]> {
+    return this.prisma.job.findMany({
+      where: { status: "pending_review" },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  async reviewJob(jobId: string, dto: ReviewJobDto): Promise<Job> {
+    const existing = await this.prisma.job.findUnique({
+      where: { id: jobId },
+    });
+
+    if (!existing) throw new NotFoundException(`Job ${jobId} not found`);
+
+    if (existing.status !== "pending_review") {
+      throw new ConflictException(
+        `Job ${jobId} is not pending review (current: ${existing.status})`,
+      );
+    }
+
+    if (dto.decision === "edit" && !dto.editedData) {
+      throw new ConflictException(
+        "editedData is required when decision is edit",
+      );
+    }
+
+    // Update DB
+    const updated = await this.prisma.job.update({
+      where: { id: jobId },
+      data: {
+        status: dto.decision === "approve" ? "completed" : "queued",
+        reviewedAt: new Date(),
+        reviewedBy: dto.reviewedBy ?? "anonymous",
+        completedAt: dto.decision === "approve" ? new Date() : null,
+      },
+    });
+
+    // Publish resume signal ke worker via Redis
+    // Worker subscribe ke channel ini dan resume graph
+    const resumePayload = JSON.stringify({
+      jobId,
+      decision: dto.decision,
+      editedData: dto.editedData ?? "",
+      note: dto.note ?? "",
+    });
+
+    // Pakai Redis pub/sub yang sama dengan SSE progress
+    // Worker punya subscriber khusus untuk resume
+    await this.publishResume(jobId, resumePayload);
+
+    this.logger.log(
+      `job_review job_id=${jobId} decision=${dto.decision} by=${dto.reviewedBy}`,
+    );
+
+    return updated;
+  }
+
+  private async publishResume(jobId: string, payload: string): Promise<void> {
+    const { Redis } = await import("ioredis");
+    const redis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
+    try {
+      await redis.publish(`job-resume:${jobId}`, payload);
+      this.logger.log(`resume_published job_id=${jobId}`);
+    } finally {
+      await redis.quit();
+    }
   }
 }

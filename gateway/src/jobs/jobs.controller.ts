@@ -13,12 +13,15 @@ import { type FastifyReply } from "fastify";
 import { JobsService } from "./jobs.service";
 import { SubmitJobDto } from "./dto/submit-job.dto";
 import { CallbackJobDto } from "./dto/callback-job.dto";
+import { JobsGateway } from "./job.gateway";
+import type { ReviewJobDto } from "./dto/review-job.dto";
 
 @Controller("jobs")
 export class JobsController {
-  private readonly logger = new Logger(JobsController.name);
-
-  constructor(private readonly jobsService: JobsService) {}
+  constructor(
+    private readonly jobsService: JobsService,
+    private readonly jobsGateway: JobsGateway,
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.ACCEPTED)
@@ -34,21 +37,7 @@ export class JobsController {
     };
   }
 
-  @Get("failed")
-  getFailedJobs() {
-    return this.jobsService.getFailedJobs();
-  }
-
-  @Post("failed/:id/retry")
-  @HttpCode(HttpStatus.ACCEPTED)
-  retryJob(@Param("id") id: string) {
-    return this.jobsService.retryJob(id);
-  }
-
-  @Get(":id")
-  getJob(@Param("id") id: string) {
-    return this.jobsService.getJob(id);
-  }
+  // ── Static routes dulu, sebelum :id ──────────────────────────────────────
 
   @Post("callback")
   async handleCallback(
@@ -68,5 +57,39 @@ export class JobsController {
       }
       throw error;
     }
+  }
+
+  @Get("failed")
+  getFailedJobs() {
+    return this.jobsService.getFailedJobs();
+  }
+
+  @Get("pending-review") // ← harus di atas :id
+  getPendingReviews() {
+    return this.jobsService.getPendingReviews();
+  }
+
+  // ── Dynamic routes dengan :id ─────────────────────────────────────────────
+
+  @Get(":id")
+  getJob(@Param("id") id: string) {
+    return this.jobsService.getJob(id);
+  }
+
+  @Get(":id/progress")
+  async streamProgress(@Param("id") id: string, @Res() reply: FastifyReply) {
+    await this.jobsGateway.streamProgress(id, reply);
+  }
+
+  @Post("failed/:id/retry")
+  @HttpCode(HttpStatus.ACCEPTED)
+  retryJob(@Param("id") id: string) {
+    return this.jobsService.retryJob(id);
+  }
+
+  @Post(":id/review")
+  @HttpCode(HttpStatus.OK)
+  reviewJob(@Param("id") id: string, @Body() dto: ReviewJobDto) {
+    return this.jobsService.reviewJob(id, dto);
   }
 }

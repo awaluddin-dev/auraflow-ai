@@ -20,8 +20,11 @@ API_PORT = int(os.getenv("WORKER_API_PORT", "8001"))
 
 
 async def main():
-    # Init processor
     processor = AuraFlowProcessor()
+
+    # Init checkpointer sebelum worker start
+    await processor.setup()
+
     set_processor(processor)
 
     logger.info(
@@ -29,7 +32,6 @@ async def main():
         QUEUE_NAME, REDIS_URL, WORKER_CONCURRENCY, API_PORT,
     )
 
-    # BullMQ worker
     bullmq_worker = Worker(
         QUEUE_NAME,
         processor.process,
@@ -41,12 +43,11 @@ async def main():
 
     logger.info("worker_ready waiting_for_jobs concurrency=%d", WORKER_CONCURRENCY)
 
-    # FastAPI via uvicorn — non-blocking
     uvicorn_config = uvicorn.Config(
         app,
         host="0.0.0.0",
         port=API_PORT,
-        log_level="warning",  # suppress uvicorn access logs, pakai logger kita
+        log_level="warning",
     )
     uvicorn_server = uvicorn.Server(uvicorn_config)
 
@@ -57,8 +58,8 @@ async def main():
         except asyncio.CancelledError:
             logger.info("worker_shutdown signal_received")
             await bullmq_worker.close()
+            await processor.teardown()
 
-    # Jalankan keduanya bersamaan
     await asyncio.gather(
         uvicorn_server.serve(),
         keep_alive(),

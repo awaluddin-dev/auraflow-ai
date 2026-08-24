@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { BullModule } from "@nestjs/bullmq";
 import { JobsController } from "./jobs.controller";
 import { JobsService } from "./jobs.service";
+import { JobsGateway } from "./job.gateway";
 
 @Module({
   imports: [
@@ -10,6 +11,6 @@ import { JobsService } from "./jobs.service";
     }),
   ],
   controllers: [JobsController],
-  providers: [JobsService],
+  providers: [JobsService, JobsGateway],
 })
 export class JobsModule {}

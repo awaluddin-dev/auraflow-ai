@@ -11,9 +11,12 @@ POST /jobs (NestJS/Fastify)
 → LangGraph Worker (Python)
 → Parser Agent: clean raw data using LLM
 → Validator Agent: verify output, loop back if invalid
+→ HITL (Human-in-the-Loop) Check: pause for manual review if confidence is low (< 0.9)
 → HTTP callback with retry + idempotency
 → PostgreSQL (result persisted)
+
 GET /jobs/:id → return status and cleaned data
+GET /jobs/:id/progress → SSE (Server-Sent Events) live streaming progress
 
 ## Stack
 
@@ -95,7 +98,7 @@ Get job status and result.
 ```json
 {
   "id": "cuid",
-  "status": "queued | completed | failed",
+  "status": "queued | pending_review | completed | failed",
   "rawData": "original input",
   "cleanedData": "{\"name\": \"John Doe\", \"salary\": 50000, \"date\": \"2024-01-15\"}",
   "isValid": true,
@@ -106,10 +109,33 @@ Get job status and result.
 }
 ```
 
+### GET /jobs/:id/progress
+
+Stream real-time job execution progress using SSE (Server-Sent Events).
+The stream will automatically close when the job reaches a terminal state (`completed`, `failed`, or `pending_review`).
+
+### GET /jobs/pending-review
+
+List all jobs that require manual Human-in-the-Loop (HITL) review due to low confidence or business rule triggers.
+
+### POST /jobs/:id/review
+
+Submit a manual review decision for a job in `pending_review` state.
+
+**Request:**
+```json
+{
+  "decision": "approve | reject | edit",
+  "editedData": "{...}", // required if decision is "edit"
+  "note": "Optional review notes"
+}
+```
+
 ## Reliability
 
 - **LLM fallback chain** — automatic failover across providers
 - **Parse retry loop** — validator feeds reason back to parser, up to 3 attempts
+- **Human-in-the-Loop (HITL)** — pauses execution for manual review if AI confidence is low or business rules are triggered
 - **Callback retry** — exponential backoff (1s → 2s → 4s → 8s → 16s), max 5 attempts
 - **Idempotency** — duplicate callbacks rejected with 409, not double-written
 - **BullMQ retry** — if all callback attempts fail, BullMQ retries the full job
