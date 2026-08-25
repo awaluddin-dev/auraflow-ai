@@ -11,20 +11,22 @@ jobs:
     name: Test Gateway (Bun)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Use full commit SHA for security (v4.2.2)
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       
+      # Use full commit SHA for oven-sh/setup-bun (v2.0.1)
       - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@4bc047ad259df6cb240e560ca9e4bcbe348539e5
         with:
           bun-version: latest
           
       - name: Install dependencies
         working-directory: ./gateway
-        run: bun install
+        run: bun install --frozen-lockfile --ignore-scripts
         
       - name: Generate Prisma Client
         working-directory: ./gateway
-        run: bunx prisma generate
+        run: bunx prisma@7.9.1 generate
         
       - name: Run tests
         working-directory: ./gateway
@@ -34,20 +36,22 @@ jobs:
     name: Test Worker (Python)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       
+      # Use full commit SHA for astral-sh/setup-uv (v5.1.2)
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@f94ec0bedd8674c4426838e6b50417d36b6ab231
         with:
           enable-cache: true
           
+      # Use full commit SHA for actions/setup-python (v5.3.0)
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
         with:
           python-version: "3.12"
           
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --frozen --no-build
         
       - name: Run tests
         run: PYTHONPATH=. uv run pytest worker/tests/

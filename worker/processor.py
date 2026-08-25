@@ -39,6 +39,7 @@ class AuraFlowProcessor:
         self._jobs_processed = 0
         self._jobs_failed = 0
         self._active_jobs: set[str] = set()
+        self._background_tasks = set()
 
     async def setup(self):
         """Init checkpointer async — dipanggil dari main() sebelum worker start."""
@@ -148,7 +149,9 @@ class AuraFlowProcessor:
                     job_id, result.get("hitl_reasons", []),
                 )
                 await self._send_review_callback(job_id, result)
-                asyncio.create_task(self._listen_for_resume(job_id))
+                task = asyncio.create_task(self._listen_for_resume(job_id))
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
                 self._jobs_processed += 1
                 return {"status": "pending_review", "jobId": job_id}
 
