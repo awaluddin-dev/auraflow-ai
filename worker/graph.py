@@ -3,7 +3,7 @@ import os
 import re
 import unicodedata
 import redis
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TypedDict
 from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt, Command
@@ -28,7 +28,7 @@ def _publish_progress(job_id: str, stage: str, data: dict = None):
     payload = json.dumps({
         "jobId": job_id,
         "stage": stage,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         **(data or {}),
     })
     try:

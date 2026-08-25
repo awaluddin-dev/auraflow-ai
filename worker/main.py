@@ -59,6 +59,7 @@ async def main():
             logger.info("worker_shutdown signal_received")
             await bullmq_worker.close()
             await processor.teardown()
+            raise
 
     await asyncio.gather(
         uvicorn_server.serve(),
