@@ -8,3 +8,6 @@ services:
     restart: always
     deploy:
       replicas: 2 # scale worker horizontal
+
+  metrics:
+    restart: always
